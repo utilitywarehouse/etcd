@@ -16,15 +16,18 @@ package command
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"go.etcd.io/etcd/clientv3"
 )
 
 var (
-	delPrefix  bool
-	delPrevKV  bool
-	delFromKey bool
+	delPrefix      bool
+	delPrevKV      bool
+	delFromKey     bool
+	delKeyContains string
+	delExecute     bool
 )
 
 // NewDelCommand returns the cobra command for "del".
@@ -38,6 +41,8 @@ func NewDelCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&delPrefix, "prefix", false, "delete keys with matching prefix")
 	cmd.Flags().BoolVar(&delPrevKV, "prev-kv", false, "return deleted key-value pairs")
 	cmd.Flags().BoolVar(&delFromKey, "from-key", false, "delete keys that are greater than or equal to the given key using byte compare")
+	cmd.Flags().BoolVar(&delExecute, "execute", false, "only print what keys will be deleted - only for key-contains")
+	cmd.Flags().StringVar(&delKeyContains, "key-contains", "", "delete keys that contain the matching string")
 	return cmd
 }
 
@@ -45,12 +50,34 @@ func NewDelCommand() *cobra.Command {
 func delCommandFunc(cmd *cobra.Command, args []string) {
 	key, opts := getDelOp(args)
 	ctx, cancel := commandCtx(cmd)
-	resp, err := mustClientFromCmd(cmd).Delete(ctx, key, opts...)
-	cancel()
-	if err != nil {
-		ExitWithError(ExitError, err)
+	defer cancel()
+	client := mustClientFromCmd(cmd)
+	if len(delKeyContains) > 0 {
+		getResp, err := client.Get(ctx, "\x00", clientv3.WithRange(""), clientv3.WithFromKey())
+		if err != nil {
+			ExitWithError(ExitError, err)
+		}
+		for _, kv := range getResp.Kvs {
+			sk := string(kv.Key)
+			if strings.Contains(sk, delKeyContains) {
+				fmt.Printf("Found Key %s. Binary is: % x\n", sk, kv.Key)
+				if delExecute {
+					fmt.Printf("deleting key...\n")
+					resp, err := client.Delete(ctx, string(kv.Key))
+					if err != nil {
+						ExitWithError(ExitError, err)
+					}
+					display.Del(*resp)
+				}
+			}
+		}
+	} else { // normal flow
+		resp, err := client.Delete(ctx, key, opts...)
+		if err != nil {
+			ExitWithError(ExitError, err)
+		}
+		display.Del(*resp)
 	}
-	display.Del(*resp)
 }
 
 func getDelOp(args []string) (string, []clientv3.OpOption) {
