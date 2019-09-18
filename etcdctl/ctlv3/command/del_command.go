@@ -28,6 +28,7 @@ var (
 	delFromKey     bool
 	delKeyContains string
 	delExecute     bool
+	delShowHex     bool
 )
 
 // NewDelCommand returns the cobra command for "del".
@@ -42,6 +43,7 @@ func NewDelCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&delPrevKV, "prev-kv", false, "return deleted key-value pairs")
 	cmd.Flags().BoolVar(&delFromKey, "from-key", false, "delete keys that are greater than or equal to the given key using byte compare")
 	cmd.Flags().BoolVar(&delExecute, "execute", false, "only print what keys will be deleted - only for key-contains")
+	cmd.Flags().BoolVar(&delShowHex, "show-hex", false, "only for key-contains: will show the HEX bytes in the hey")
 	cmd.Flags().StringVar(&delKeyContains, "key-contains", "", "delete keys that contain the matching string")
 	return cmd
 }
@@ -60,7 +62,11 @@ func delCommandFunc(cmd *cobra.Command, args []string) {
 		for _, kv := range getResp.Kvs {
 			sk := string(kv.Key)
 			if strings.Contains(sk, delKeyContains) {
-				fmt.Printf("Found Key %s. Binary is: % x\n", sk, kv.Key)
+				binary := ""
+				if delShowHex {
+					binary = fmt.Sprintf("Binary is: % x", kv.Key)
+				}
+				fmt.Printf("Found Key %s. %s\n", sk, binary)
 				if delExecute {
 					fmt.Printf("deleting key...\n")
 					resp, err := client.Delete(ctx, string(kv.Key))
